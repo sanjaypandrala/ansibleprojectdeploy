@@ -1,0 +1,362 @@
+# WHAT IS A DEPLOY?
+# Directory structure:
+# .
+# !"" releases
+# | !"" 20140415234508
+# | #"" 20140415235146
+# !"" shared
+#  | !"" sessions
+#  | !"" source
+#  | #"" uploads
+#  "" current -> releases/20140415235146
+# WHAT IS A DEPLOY?
+# Directory structure:
+# .
+# !"" releases
+# | !"" 20140415234508
+#  | #"" 20140415235146
+# !"" shared
+# | !"" sessions
+# | !"" source
+# | #"" uploads
+# "" current -> releases/20140415235146
+# 13
+# WHAT IS A DEPLOY?
+# 1. Update the codebase + configuration
+# 14
+# WHAT IS A DEPLOY?
+# 1. Update the codebase + configuration
+# 2. Install dependencies
+# 15
+# WHAT IS A DEPLOY?
+# 1. Update the codebase + configuration
+# 2. Install dependencies
+# 3. Preserve shared resources
+# 16
+#  WHAT IS A DEPLOY?
+# 1. Update the codebase + configuration
+# 2. Install dependencies
+# 3. Preserve shared resources
+# 4. Build tasks
+# 17
+# WHAT IS A DEPLOY?
+# 1. Update the codebase + configuration
+# 2. Install dependencies
+# 3. Preserve shared resources
+# 4. Build tasks
+# 5. Finalize
+# 18
+# THE ROLE
+# 19
+# https://galaxy.ansible.com/list#/roles/732
+# project_deploy
+# GETTING THE ROLE
+# Installation with ansible-galaxy command:
+# $ ansible-galaxy install f500.project_deploy,v1.0.0
+# Optional: create a galaxy file for all roles:
+# f500.nginx
+# f500.mariadb55
+#  f500.php
+# f500.project_deploy,v1.0.0
+# $ ansible-galaxy install -r ansible/galaxy.txt
+# 20
+# ROLE WALKTHROUGH
+---
+- name: Initialize
+ deploy: "path={{ project_root }} state=present"
+# 21
+# ROLE WALKTHROUGH
+# Deploy module variables:
+# deploy:
+# project_path
+# current_path
+# releases_path
+# shared_path
+# last_release
+# last_release_path
+# new_release
+# new_release_path
+# unfinished_filename
+
+# 22
+# ROLE WALKTHROUGH
+# Deploy module variables:
+ deploy:
+ project_path: /path/to/project/
+ current_path: /path/to/project/current
+ releases_path: /path/to/project/releases
+ shared_path: /path/to/project/shared
+ last_release: 20140415234508
+ last_release_path: /path/to/project/releases/20140415234508
+ new_release: 20140415235146
+ new_release_path: /path/to/project/releases/20140415235146
+ unfinished_filename: DEPLOY_UNFINISHED
+
+ Used as:
+ {{ deploy.new_release }}
+# 23
+# 1. UPDATE THE CODEBASE
+- name: Clone project files
+ git: repo={{ project_git_repo }}
+ dest={{ project_source_path }}
+ version={{ project_version }}
+ when: project_deploy_strategy == 'git'
+- name: Rsync project files
+ synchronize: src={{ project_local_path }}
+ dest={{ project_source_path }}
+ rsync_timeout={{ project_deploy_synchronize_timeout }}
+ recursive=yes
+ when: project_deploy_strategy == 'synchronize'
+# 24
+# 1. UPDATE THE CODEBASE
+- name: Clone project files
+ git: repo={{ project_git_repo }}
+ dest={{ project_source_path }}
+ version={{ project_version }}
+ when: project_deploy_strategy == 'git'
+- name: Rsync project files
+ synchronize: src={{ project_local_path }}
+ dest={{ project_source_path }}
+ rsync_timeout={{ project_deploy_synchronize_timeout }}
+ recursive=yes
+ when: project_deploy_strategy == 'synchronize'
+# 25
+# 1. UPDATE THE CODEBASE
+- name: Clone project files
+ git: repo={{ project_git_repo }}
+ dest={{ project_source_path }}
+ version={{ project_version }}
+ when: project_deploy_strategy == 'git'
+- name: Rsync project files
+ synchronize: src={{ project_local_path }}
+ dest={{ project_source_path }}
+ rsync_timeout={{ project_deploy_synchronize_timeout }}
+ recursive=yes
+ when: project_deploy_strategy == 'synchronize'
+# 26
+# 1. UPDATE THE CODEBASE
+- name: Write unfinished file
+ file: path={{ project_source_path }}/{{ deploy.unfinished_filename }}
+ state=touch
+- name: Copy files to new build dir
+ command: "cp -pr {{ project_source_path }} {{ deploy.new_release_path }}"
+- name: Remove unwanted files/folders from new release
+ file: path={{ deploy.new_release_path }}/{{ item }} state=absent
+ with_items: project_unwanted_items
+# 27
+# 1. UPDATE THE CONFIG FILES
+- name: Copy project files
+ copy: src={{ item.src }}
+ dest={{ deploy.new_release_path }}/{{ item.dest }}
+ mode={{ item.mode|default('0644') }}
+ with_items: project_files
+- name: Copy project templates
+ template: src={{ item.src }}
+ dest={{ deploy.new_release_path }}/{{ item.dest }}
+ mode={{ item.mode|default('0644') }}
+ with_items: project_templates
+# 28
+# 2. INSTALL DEPENDENCIES
+- name: Do composer install
+ command: "{{ project_command_for_composer_install }} chdir=…"
+ environment: project_environment
+ when: project_has_composer
+- name: Do npm install
+ command: "{{ project_command_for_npm_install }} chdir=…"
+ environment: project_environment
+ when: project_has_npm
+- name: Do bower install
+ command: "{{ project_command_for_bower_install }} chdir=…"
+ environment: project_environment
+ when: project_has_bower
+# 29
+# 2. INSTALL DEPENDENCIES
+- name: Do composer install
+ command: "{{ project_command_for_composer_install }} chdir=…"
+ environment: project_environment
+ when: project_has_composer
+- name: Do npm install
+ command: "{{ project_command_for_npm_install }} chdir=…"
+ environment: project_environment
+ when: project_has_npm
+- name: Do bower install
+ command: "{{ project_command_for_bower_install }} chdir=…"
+ environment: project_environment
+ when: project_has_bower
+# 30
+# 3. SHARED RESOURCES
+- name: Ensure shared sources are present
+ file: "path='{{ deploy.shared_path }}/{{ item.src }}' state={{ item.type }}“
+ with_items: project_shared_children
+- name: Ensure shared paths are absent
+ file: "path='{{ deploy.new_release_path }}/{{ item.path }}' state=absent"
+ with_items: project_shared_children
+- name: Create shared symlinks
+ file: path='{{ deploy.new_release_path }}/{{ item.path }}'
+ src='{{ deploy.shared_path }}/{{ item.src }}'
+ state=link"
+ with_items: project_shared_children
+# 31
+# 4. BUILD STEPS
+- name: Run post_build_commands in the new_release_path
+ command: "{{ item }} chdir={{ deploy.new_release_path }}"
+ with_items: project_post_build_commands
+ environment: project_environment
+# 32
+ project_post_build_commands:
+ - "app/console cache:clear"
+ - "app/console assets:install"
+ - "app/console assetic:dump" 
+# 5. FINALIZE
+- name: Remove unfinished file
+ file: path={{ deploy.new_release_path }}/{{ deploy.unfinished_filename }}
+ state=absent
+ when: project_finalize
+- name: Finalize the deploy
+ file: src={{ deploy.new_release_path }} dest={{ deploy.current_path }}
+ state=link
+ when: project_finalize
+# 33
+# 34
+# IT’S NOT COMPLICATED!
+# • Only 75 lines
+# • Number of tasks: 18
+# • Variables to configure: 24
+# 35
+# EXAMPLE PLAYBOOK
+# 1. Set minimum variables
+# 2. Add the role to “roles” section
+# 36
+# MINIMAL PLAYBOOK
+- name: Deploy the application
+ hosts: production
+ remote_user: deploy
+ sudo: no
+ vars:
+ project_root: /var/www/my_project
+ project_git_repo: git@github.com:me/my_project.git
+ project_deploy_strategy: git
+ roles:
+ - f500.project_deploy
+# 37
+# EXAMPLE PLAYBOOK
+- name: Deploy the application
+ hosts: production
+ remote_user: "{{ production_deploy_user }}"
+ sudo: no
+ vars:
+ project_root: "{{ sweetlakephp_root }}"
+ project_git_repo: "{{ sweetlakephp_github_repo }}"
+ project_deploy_strategy: git
+# 38
+# EXAMPLE PLAYBOOK
+- name: Deploy the application
+ hosts: production
+ remote_user: "{{ production_deploy_user }}"
+ sudo: no
+ vars:
+ project_root: "{{ sweetlakephp_root }}"
+ project_git_repo: "{{ sweetlakephp_github_repo }}"
+ project_deploy_strategy: git
+ project_environment:
+ SYMFONY_ENV: "prod"
+# 39
+# EXAMPLE PLAYBOOK
+ project_environment:
+ SYMFONY_ENV: "prod"
+ project_shared_children:
+ - path: "/app/sessions"
+ src: "sessions"
+ - path: "/web/uploads"
+ src: "uploads"
+ project_templates:
+ - name: parameters.yml
+ src: "templates/parameters_prod.yml.j2"
+ dest: "/app/config/parameters_prod.yml"
+# 40
+# EXAMPLE PLAYBOOK
+ project_environment:
+ SYMFONY_ENV: "prod"
+ project_shared_children:
+ - path: "/app/sessions"
+ src: "sessions"
+ - path: "/web/uploads"
+ src: "uploads"
+ project_templates:
+ - name: parameters.yml
+ src: "templates/parameters_prod.yml.j2"
+ dest: "/app/config/parameters_prod.yml"
+# 41
+# EXAMPLE PLAYBOOK
+ project_has_composer: yes
+ project_post_build_commands:
+ - "php vendor/sensio/…/DistributionBundle/…/bin/build_bootstrap.php”
+ - "app/console cache:clear"
+ - "app/console doctrine:migrations:migrate --no-interaction"
+ - "app/console assets:install"
+ - "app/console assetic:dump"
+ roles:
+ - f500.project_deploy
+ post_tasks:
+ - name: Remove old releases
+ deploy: "path={{ project_root }} state=clean"
+# 42
+# EXAMPLE PLAYBOOK
+ project_has_composer: yes
+ project_post_build_commands:
+ - "php vendor/sensio/…/DistributionBundle/…/bin/build_bootstrap.php”
+ - "app/console cache:clear"
+ - "app/console doctrine:migrations:migrate --no-interaction"
+ - "app/console assets:install"
+ - "app/console assetic:dump"
+ roles:
+ - f500.project_deploy
+ post_tasks:
+ - name: Remove old releases
+ deploy: "path={{ project_root }} state=clean"
+# 43
+# EXAMPLE PLAYBOOK
+# 44
+ project_has_composer: yes
+ project_post_build_commands:
+ - "php vendor/sensio/…/DistributionBundle/…/bin/build_bootstrap.php”
+ - "app/console cache:clear"
+ - "app/console doctrine:migrations:migrate --no-interaction"
+ - "app/console assets:install"
+ - "app/console assetic:dump"
+ roles:
+ - f500.project_deploy
+ post_tasks:
+ - name: Remove old releases
+ deploy: "path={{ project_root }} state=clean" 
+# WHAT DOESN’T IT DO?
+# 45
+# • Rollbacks (the cake rollback is a lie)
+# WHAT DOESN’T IT DO?
+# 46
+# • Rollbacks
+# • Set maintenance mode
+# (the cake rollback is a lie)
+# WHAT DOESN’T IT DO?
+# 47
+# • Rollbacks
+# • Set maintenance mode
+# • DB migrations
+# (the cake rollback is a lie)
+# WHAT’S NEXT?
+# 48
+# • Full-blown Actions in addition to commands
+# WHAT’S NEXT?
+# 49
+# • Full-blown Actions in addition to commands
+# • Setfacl support
+# WHAT’S NEXT?
+# 50
+# • Full-blown Actions in addition to commands
+# • Setfacl support
+# • Your ideas?
+# THANK YOU!
+# 51
+# Feedback: joind.in?
+# https://github.com/f500/ansible-project_deploy
+# (But we’re also people. You could just talk to us and tell us what you think…)
